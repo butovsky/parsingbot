@@ -1,4 +1,3 @@
-#https://delaney.gitbook.io/create-telegram-bot/
 
 import telebot
 import requests
@@ -6,8 +5,19 @@ import time
 from dictionary import dictionary, future_db, full_db, cities
 from bs4 import BeautifulSoup
 from threading import Thread
+import sqlite3
 
-TOKEN = '1618872853:AAGlohngJ9dmX5jHjbR7xbpjimG16B-m8EM'
+#мне кажется если привлечь ооп то код станет чище и лучше
+#idk надо что то делать - займусь позже, работает и уже замечательно, и всего то на 250 строк
+
+dbconnect = sqlite3.connect('parser.db', check_same_thread=False)
+dbcursor = dbconnect.cursor()
+dbcursor.execute("""CREATE TABLE IF NOT EXISTS user_id(
+        id text NOT NULL PRIMARY KEY,
+        UNIQUE(id)); """)
+dbconnect.commit()
+
+TOKEN = '1671579913:AAEVSxlFYnWLj9P9YPfQLwzV4vHRaXpTR_U'
 bot = telebot.TeleBot(TOKEN)
 
 def delete(messagecall):
@@ -38,76 +48,81 @@ back1.add (telebot.types.InlineKeyboardButton(text='Назад', callback_data=1
 back2 = telebot.types.InlineKeyboardMarkup()
 back2.add (telebot.types.InlineKeyboardButton(text='Назад', callback_data=3))
 
+keyboardmain = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+keyboardmain.row('Главное меню')
+
 keyboard1 = telebot.types.InlineKeyboardMarkup()
 keyboard1.add(telebot.types.InlineKeyboardButton(text='Добавить новое объявление', callback_data=2))
 keyboard1.add(telebot.types.InlineKeyboardButton(text='Мои объявления', callback_data=3))
 
-keyboard2 = telebot.types.InlineKeyboardMarkup()
-keyboard2.add(telebot.types.InlineKeyboardButton(text='Циан', callback_data=4))
-keyboard2.add(telebot.types.InlineKeyboardButton(text='Авито', callback_data=5))
-keyboard2.add(telebot.types.InlineKeyboardButton(text='Назад', callback_data=1))
 
 keyboard3 = telebot.types.InlineKeyboardMarkup()
 keyboard3.add(telebot.types.InlineKeyboardButton(text='Да', callback_data=6))
 keyboard3.add(telebot.types.InlineKeyboardButton(text='Нет', callback_data=5))
 
-
-#разобраться с markup и remove
 savehandler = 0
-urls = []
 #добавить конструкторы для клавиатур
-
-#board = types.InlineKeyboardMarkup()
-#cancel = types.InlineKeyboardButton(text="Отмена", callback_data="Отмена")
-#board.add(cancel)
 
 
 @bot.message_handler(commands=['start'])
 def start_message(message):
 
     send(message,
-                    'Привет, я - тестовый парсер объявлений с ЦИАН и Авито. '
+                    'Привет, я - тестовый парсер объявлений с Авито. '
                     'Я очень быстрый и вместе с тем бесплатный. \n\n'
                     'Но это до тех пор, пока Саше не нужно держать сервер. '
-                    'Парсер будет работать пока работает его камплюктер. \n\n'
+                    'Парсер будет работать, пока работает его компьютер. \n\n'
                     'Не бойся, все твои данные сохранятся. '
-                    'Как только я вновь запущусь, тебе придут новые объявления. \n\n', None)
+                    'Как только я вновь запущусь, тебе придут самые свежие объявления. \n\n', None)
 
     send(message, 'Напиши кодовое слово', None)
-
-#подумать как можно завернуть это в ооп, мб абстрактный класс? idk надо приводить код в норм вид
-
-#полезные ссылки по хэндлеру:
-#https://stackoverflow.com/questions/45405369/pytelegrambotapi-how-to-save-state-in-next-step-handler-solution
-#https://github.com/eternnoir/pyTelegramBotAPI/blob/master/examples/step_example.py - ОЧЕНЬ ПОЛЕЗНО
 
 
 @bot.message_handler(content_types=['text'])
 def check_code(message):
+#savehandler - это мой путь решения проблемы хендлера по тексту: он всего один, а сценариев должно быть несколько, скорее всего он не совсем удобен если сценариев не 10 а 100, требует доработки - однако для тестового проекта пока сгодится
     global savehandler
+#сделал что то вроде кодового слова, вместо него можно все написанное ниже сразу передать в хендлер по команде /start
     if message.text.lower() == 'истфак':
-        send(message, 'Добро пожаловать!', keyboard1)
-        if not message.chat.id in full_db:
-            full_db[str(message.chat.id)] = {}
-    elif message.text.lower() in cities and savehandler == 1:
-        savehandler -= 1
-        future_db['город'] = save_city(message)
-    elif savehandler == 2:
+        send(message, 'добро пожаловать!', keyboard1)
+        send(message, 'выбери пункт в меню, чтобы продолжить', keyboardmain)
+        dbcursor.execute("""CREATE TABLE IF NOT EXISTS """ + f'id{str(message.chat.id)}' + """(
+        name text NOT NULL PRIMARY KEY,
+        city text NOT NULL,
+        search text NOT NULL,
+        min integer,
+        max integer,
+        link text NOT NULL,
+        last text NOT NULL); """)
+        dbcursor.execute("""REPLACE INTO user_id(id) VALUES(?); """, [str(message.chat.id)])
+        dbconnect.commit()
+
+    elif message.text.lower() == 'главное меню':
+        send(message, 'добро пожаловать!', keyboard1)
+
+    elif savehandler == 1:
+        savehandler += 1
+        full_db[message.chat.id] = future_db
+        full_db[message.chat.id]['название'] = message.text
+        send(message, 'город', None)
+
+    elif message.text.lower() in cities and savehandler == 2:
         savehandler -= 2
-        future_db['поиск'] = save_search(message)
+        full_db[message.chat.id]['город'] = save_city(message)
+
     elif savehandler == 3:
         savehandler -= 3
-        future_db['мин'] = min_search(message)
+        full_db[message.chat.id]['поиск'] = save_search(message)
+
     elif savehandler == 4:
         savehandler -= 4
-        future_db['макс'] = max_search(message)
-        global urls
-        urls.append(linkget(message))
+        full_db[message.chat.id]['мин'] = min_search(message)
+
     elif savehandler == 5:
         savehandler -= 5
-        full_db[str(message.chat.id)][message.text] = future_db
-        print(full_db)
-        send(message, 'Добро пожаловать!', keyboard1)
+        full_db[message.chat.id]['макс'] = max_search(message)
+        full_db[message.chat.id]['ссылка'] = linkget(message)
+
     else:
         send(message, 'Не понимаю', None)
 
@@ -115,22 +130,59 @@ def check_code(message):
 def main_menu(call):
 
     delete(call)
+
     if call.data == '1':
-        send(call.message, 'Добро пожаловать!', keyboard1)
-    elif call.data == '2':
-        send(call.message, 'Выбери площадку', keyboard2)
+        send(call.message, 'добро пожаловать!', keyboard1)
+
     elif call.data == '3':
-        send(call.message, 'Выбери объявление среди списка:', keyboard2)
+        global keyboard4
+        keyboard4 = telebot.types.InlineKeyboardMarkup()
+        global finalnames
+        finalnames = []
+        dbnames = dbcursor.execute("SELECT name FROM " + f'id{str(call.message.chat.id)}' + "")
+        for dbname in dbnames:
+            finalname = (''.join(list(dbname)))
+            finalnames.append(finalname)
+            keyboard4.add(telebot.types.InlineKeyboardButton(text=finalname, callback_data=finalname))
+        keyboard4.add(telebot.types.InlineKeyboardButton(text='Назад', callback_data=1))
+        send(call.message, 'Выбери объявление среди списка:', keyboard4)
+        global callhandler
+        callhandler = 0
+
     elif call.data == '4':
         send(call.message, 'Циан', back2)
-    elif call.data == '5':
-        send(call.message, 'Авито', back2)
-        send(call.message, 'город', None)
+
+    elif call.data == '2':
+        send(call.message, 'под каким названием сохранить запрос?', None)
         global savehandler
         savehandler += 1
+
     elif call.data == '6':
-        send(call.message, 'название объявления', None)
-        savehandler += 5
+        dbvalues = tuple(full_db[call.message.chat.id].values())
+        print(dbvalues)
+        sql = """INSERT INTO """ + f'id{str(call.message.chat.id)}' + """(name, city, search, min, max, link, last) VALUES(?, ?, ?, ?, ?, ?, ?); """
+        dbcursor.execute(sql, dbvalues)
+        dbconnect.commit()
+        dbcursor.execute("SELECT * FROM " + f'id{str(call.message.chat.id)}' + "")
+        rows = dbcursor.fetchall()
+        for row in rows:
+            print (row)
+        send(call.message, 'добро пожаловать!', keyboard1)
+
+    elif call.data in finalnames and callhandler == 0:
+        keyboard5 = telebot.types.InlineKeyboardMarkup()
+        keyboard5.add(telebot.types.InlineKeyboardButton(text='да', callback_data=str(call.data)))
+        keyboard5.add(telebot.types.InlineKeyboardButton(text='нет', callback_data=3))
+        send(call.message, 'удаляем?', keyboard5)
+        callhandler = 1
+
+    elif call.data in finalnames and callhandler == 1:
+        callhandler -= 1
+        dbcursor.execute("DELETE FROM " + f'id{str(call.message.chat.id)}' +  " WHERE name=?", [call.data])
+        keyboard6 = telebot.types.InlineKeyboardMarkup()
+        keyboard6.add(telebot.types.InlineKeyboardButton(text='назад', callback_data=3))
+        send(call.message, 'успешно удалено', keyboard6)
+
     else:
         send(call.message, 'ну и что', None)
 
@@ -139,64 +191,75 @@ def save_city(message):
     print(message.text)
     send(message, 'что ищем?', None)
     global savehandler
-    savehandler += 2
+    savehandler += 3
     return (translit(message.text.lower()))
 
 def save_search(message):
     print(message.text)
     send(message, 'укажи минималку', None)
     global savehandler
-    savehandler += 3
+    savehandler += 4
     return ('+'.join(message.text.lower().split(' ')))
 
 def min_search(message):
     print(message.text)
     send(message, 'укажи максималку', None)
     global savehandler
-    savehandler += 4
-    return(numstrip(message.text))
+    savehandler += 5
+    return(int(numstrip(message.text)))
 
 def max_search(message):
     print(message.text)
-    return(numstrip(message.text))
+    return(int(numstrip(message.text)))
 
 def linkget(message):
     global link
     link = f'https://www.avito.ru/{future_db["город"]}?pmax={future_db["макс"]}&pmin={future_db["мин"]}&q={future_db["поиск"]}&s=104'
-    send(message, f'Все ок?\n{link}', keyboard3)
+    send(message, f'все ок?\n{link}', keyboard3)
     return(link)
 
 def url(page_url):
-    print(requests.get(page_url).text)
     return requests.get(page_url).text
 
-##parsed = 'avito.ru'
-#def parsing(url = url(urls[0])):
- #   while True:
-  #      for i in range(10):
-   #         print('jopa')
-    #        soup = BeautifulSoup(url, 'lxml')
-     #       linkss = soup.find('div', attrs={'class': 'iva-item-titleStep-2bjuh'})
-       #     linksss = linkss.find('a')
-      #      x = f'avito.ru{linksss.get("href")}'
-     #       global parsed
-    #        if not parsed == x:
-   #             parsed = x
-  #          print (parsed)
- #       time.sleep(1)
+#не функция а пиздец, СРОЧНО необходимо что то с ней сделать чтобы она работала но выглядела попривлекательнее
 
+def test():
+    while True:
+        try:
+            dbcursor.execute("SELECT * FROM user_id")
+            ids = dbcursor.fetchall()
+            for id in ids:
+                finalid = ''.join(list(id))
+                print(finalid)
+                linkquery = "SELECT link FROM " + f'id{finalid}' + ""
+                dbcursor.execute(linkquery)
+                dburls = dbcursor.fetchall()
+                for dburl in dburls:
+                    finalurl = (''.join(list(dburl)))
+                    print(finalurl)
+                    soup = BeautifulSoup(url(finalurl), 'lxml')
+                    linkss = soup.find('div', attrs={'class': 'iva-item-titleStep-2bjuh'})
+                    linksss = linkss.find('a')
+                    x = f'avito.ru{linksss.get("href")}'
+                    lastquery = "SELECT last FROM " + f'id{finalid}' " WHERE link = ?;"
+                    dbcursor.execute(lastquery, [finalurl])
+                    dblast = (''.join(list(dbcursor.fetchone())))
+                    if not dblast == x:
+                        updatequery = "UPDATE " + f'id{finalid}' + " SET last = ? WHERE link = ?;"
+                        dbcursor.execute(updatequery, [x, finalurl])
+                        dbconnect.commit()
+                        bot.send_message(chat_id=int(finalid), text=f'Новое объявление по твоему запросу: {x}')
+                    time.sleep(5)
+            time.sleep(30)
+        except IndexError:
+            continue
 
-#def bots():
-#    bot.polling()
+def bots():
+    bot.polling()
 
-#p1 = Thread(target=bots)
-#p2 = Thread(target=parsing)
-#if __name__ == '__main__':
-#    p1.start(), p2.start()
-#    p1.join(), p2.join()
+p1 = Thread(target=bots)
+p2 = Thread(target=test)
+if __name__ == '__main__':
+    p1.start(), p2.start()
+    p1.join(), p2.join()
 bot.polling()
-#https://pocketadmin.tech/ru/telegram-bot-%D0%BD%D0%B0-python/
-
-#regexp походу позволяет разграничить!
-
-#@bot.message_handler(content_types=['text'], func=lambda message: message.text.lower() == "получить ключ")
