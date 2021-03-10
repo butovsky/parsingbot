@@ -17,7 +17,7 @@ dbcursor.execute("""CREATE TABLE IF NOT EXISTS user_id(
         UNIQUE(id)); """)
 dbconnect.commit()
 
-TOKEN = '1671579913:AAEVSxlFYnWLj9P9YPfQLwzV4vHRaXpTR_U'
+TOKEN = 'your token'
 bot = telebot.TeleBot(TOKEN)
 
 def delete(messagecall):
